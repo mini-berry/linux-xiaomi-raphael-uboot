@@ -16,7 +16,7 @@
 
 ## ✨ 项目简介
 
-本项目为 **小米 Raphael（Redmi K20 Pro）** 专属 Linux 镜像构建方案，提供完整的 Debian / Ubuntu 系统镜像构建脚本与 GitHub Actions 自动化工作流。支持多内核版本、多桌面环境，开箱即用。
+本项目为 **小米 Raphael（Redmi K20 Pro）** 专属 Linux 镜像构建方案，提供完整的 Debian / Ubuntu 系统镜像构建脚本与 GitHub Actions 自动化工作流。支持多内核版本、多桌面环境（GNOME / KDE Plasma / Phosh），开箱即用。
 
 ## 📋 支持系统类型
 
@@ -24,9 +24,11 @@
 |:---:|:---:|:---:|:---:|
 | `debian-server` | 无（纯命令行） | Debian trixie | 3G |
 | `debian-gnome` | GNOME | Debian trixie | 6G |
+| `debian-kde` | KDE Plasma 6 | Debian trixie | 6G |
 | `debian-phosh` | Phosh 移动端桌面 | Debian trixie | 6G |
 | `ubuntu-server` | 无（纯命令行） | Ubuntu resolute | 3G |
 | `ubuntu-gnome` | GNOME | Ubuntu resolute | 6G |
+| `ubuntu-kde` | KDE Plasma 6 | Ubuntu resolute | 6G |
 | `ubuntu-phosh` | Phosh 移动端桌面 | Ubuntu resolute | 6G |
 
 ## 🖥️ 设备硬件适配
@@ -48,7 +50,7 @@
 
 前往 [Releases](https://github.com/GengWei1997/linux-xiaomi-raphael-uboot/releases) 页面下载最新镜像，无需本地编译。
 
-> ⚠️ `ubuntu-gnome` 镜像体积超过 2GB，请前往项目 [Actions → Artifacts](https://github.com/GengWei1997/linux-xiaomi-raphael-uboot/actions) 下载。
+> ⚠️ `ubuntu-gnome` / `ubuntu-kde` / `ubuntu-phosh` 等桌面镜像体积可能超过 2GB，请前往项目 [Actions → Artifacts](https://github.com/GengWei1997/linux-xiaomi-raphael-uboot/actions) 下载。
 
 ### 方式二：GitHub Actions 自定义构建（推荐）
 
@@ -63,6 +65,8 @@
 | 内核版本 | 跟随 [Aospa-raphael-unofficial/linux](https://github.com/Aospa-raphael-unofficial/linux) 上游更新 | `7.1` |
 | 构建工具 | `mmdebstrap` / `debootstrap` | `mmdebstrap` |
 | Phosh 变体 | 仅 Phosh 镜像生效 | `phosh-core` |
+
+> 📌 `debian-kde` / `ubuntu-kde` 使用 **KDE Plasma 6** 桌面（Debian 安装 `kde-standard`，Ubuntu 安装 `kubuntu-desktop`），显示管理器为 **SDDM**；`debian-gnome` / `ubuntu-gnome` 仍为 GNOME，两者可同时构建。
 
 4. 等待构建完成，镜像自动发布至 Releases
 
@@ -85,7 +89,10 @@
 
 ### 🎨 桌面版专属
 
-- GNOME / Phosh 双桌面环境可选，适配桌面、移动两种使用场景
+- GNOME / KDE Plasma / Phosh 三种桌面环境可选，适配桌面、移动两种使用场景
+- 桌面版均可使用实体电源键：**短按**息屏 / 亮屏，**长按 1 秒**弹出关机菜单
+  - GNOME：走 `org.gnome.ScreenSaver` + `org.gnome.SessionManager`
+  - KDE：走 `org.freedesktop.ScreenSaver`（由 kscreenlocker 实现）+ `org.kde.Shutdown`
 
 ### 🖥️ 服务器版专属
 

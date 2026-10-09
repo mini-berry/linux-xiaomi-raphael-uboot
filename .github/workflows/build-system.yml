@@ -12,9 +12,9 @@ on:
           - single
         default: 'parallel'
       system_types:
-        description: '系统类型 (用逗号分隔多个值，如: debian-server,debian-gnome)'
+        description: '系统类型 (用逗号分隔多个值，如: debian-server,debian-kde)'
         required: false
-        default: 'debian-server,debian-gnome,debian-phosh,ubuntu-server,ubuntu-gnome,ubuntu-phosh'
+        default: 'debian-server,debian-gnome,debian-kde,debian-phosh,ubuntu-server,ubuntu-gnome,ubuntu-kde,ubuntu-phosh'
         type: string
       kernel_versions:
         description: '内核版本 (默认7.1)'
@@ -238,7 +238,7 @@ jobs:
             "https://github.com/GengWei1997/kernel-deb/releases/download/v1.0.0/xiaomi-k20pro-boot.img" &
           PID4=$!
 
-          if [[ "${{ env.SYSTEM_TYPE }}" == *"phosh"* || "${{ env.SYSTEM_TYPE }}" == *"gnome"* ]]; then
+          if [[ "${{ env.SYSTEM_TYPE }}" == *"phosh"* || "${{ env.SYSTEM_TYPE }}" == *"gnome"* || "${{ env.SYSTEM_TYPE }}" == *"kde"* ]]; then
             curl -sL -o alsa-xiaomi-raphael.deb \
               "https://github.com/${{ env.KERNEL_REPO }}/releases/download/kernel-v${{ env.KERNEL_VERSION }}/alsa-xiaomi-raphael.deb" &
             PID5=$!

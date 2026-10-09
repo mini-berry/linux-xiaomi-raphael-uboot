@@ -1,15 +1,21 @@
 #!/bin/bash
 set -e
 
-if [ "$DESKTOP_ENV" != "gnome" ]; then
-	echo "[$(date +'%Y-%m-%d %H:%M:%S')] ⏭️  非 GNOME 桌面，跳过电源键配置"
+if [ "$DESKTOP_ENV" = "gnome" ]; then
+	POWER_MENU_DESC="GNOME 关机对话框"
+	SESSION_PROC="gnome-shell"
+elif [ "$DESKTOP_ENV" = "kde" ]; then
+	POWER_MENU_DESC="KDE Plasma 关机菜单"
+	SESSION_PROC="startplasma-wayland"
+else
+	echo "[$(date +'%Y-%m-%d %H:%M:%S')] ⏭️  非 GNOME / KDE 桌面，跳过电源键配置"
 	exit 0
 fi
 
 # 默认用户名，构建时由 USER_NAME 环境变量覆盖
 POWER_KEY_USER="${USER_NAME:-user}"
 
-echo "[$(date +'%Y-%m-%d %H:%M:%S')] 🔘 配置电源键（用户: ${POWER_KEY_USER}，短按息屏/亮屏 / 长按1s关机菜单）"
+echo "[$(date +'%Y-%m-%d %H:%M:%S')] 🔘 配置电源键（用户: ${POWER_KEY_USER}，短按息屏/亮屏 / 长按1s${POWER_MENU_DESC}）"
 
 echo "[$(date +'%Y-%m-%d %H:%M:%S')]   └─ 禁用 systemd 电源键行为"
 install -d rootdir/etc/systemd/logind.conf.d
@@ -25,10 +31,18 @@ install -d rootdir/usr/local/sbin
 cat > rootdir/usr/local/sbin/power-key-handler.py << 'PYEOF'
 #!/usr/bin/env python3
 """
-Power Key Handler for GNOME Desktop
+Power Key Handler for GNOME / KDE Plasma Desktop
 Ported from phosh/src/screen-saver-manager.c behavior:
-  - Short press (< 1s): toggle screen blank/wake via ScreenSaver DBus
+  - Short press (< 1s): toggle screen blank/wake
   - Long press (>= 1s): show power menu (shutdown dialog)
+
+Neither GNOME (gnome-shell) nor KDE Plasma (kscreenlocker) provides a D-Bus
+"blank the screen without locking" API:
+  - GNOME exposes the deprecated org.gnome.ScreenSaver (GetActive/SetActive)
+  - KDE exposes org.freedesktop.ScreenSaver, implemented by kscreenlocker
+Both are best-effort; when they are missing we fall back to
+`loginctl lock-session` / `unlock-session`, which locks instead of blanking.
+The desktop environment is injected at build time via POWER_KEY_DESKTOP.
 """
 import logging
 import os
@@ -44,6 +58,18 @@ KEY_POWER = 116
 EVENT_FMT = "llHHi"
 EVENT_SIZE = struct.calcsize(EVENT_FMT)
 LONG_PRESS_SEC = 1.0
+
+# gnome-shell registers org.gnome.ScreenSaver on the session bus.
+# KDE uses the freedesktop interface name instead.
+DESKTOP = os.environ.get("POWER_KEY_DESKTOP", "gnome")
+if DESKTOP == "kde":
+    SCREENSAVER_DEST = "org.freedesktop.ScreenSaver"
+    SCREENSAVER_PATH = "/ScreenSaver"
+    SCREENSAVER_IFACE = "org.freedesktop.ScreenSaver"
+else:
+    SCREENSAVER_DEST = "org.gnome.ScreenSaver"
+    SCREENSAVER_PATH = "/org/gnome/ScreenSaver"
+    SCREENSAVER_IFACE = "org.gnome.ScreenSaver"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -97,44 +123,60 @@ def get_env():
     return env
 
 
-def query_screensaver_active():
-    """Query org.gnome.ScreenSaver.GetActive. Returns True if screen is blanked."""
+def screensaver_call(method, *args):
+    """Call a method on the desktop screen saver interface."""
     env = get_env()
+    return subprocess.run(
+        ["gdbus", "call", "--session",
+         "--dest", SCREENSAVER_DEST,
+         "--object-path", SCREENSAVER_PATH,
+         "--method", f"{SCREENSAVER_IFACE}.{method}", *args],
+        env=env, capture_output=True, text=True, timeout=3)
+
+
+def loginctl(action):
+    """Session-manager fallback: lock-session / unlock-session / terminate-session."""
+    env = get_env()
+    env["XDG_SESSION_ID"] = os.environ.get("XDG_SESSION_ID", "auto")
+    return subprocess.run(
+        ["loginctl", action], env=env, capture_output=True, text=True, timeout=5)
+
+
+def query_screensaver_active():
+    """Query GetActive. Returns True if the screen is already blanked."""
     try:
-        r = subprocess.run(
-            ["gdbus", "call", "--session",
-             "--dest", "org.gnome.ScreenSaver",
-             "--object-path", "/org/gnome/ScreenSaver",
-             "--method", "org.gnome.ScreenSaver.GetActive"],
-            env=env, capture_output=True, text=True, timeout=2)
-        return "(true" in r.stdout
+        r = screensaver_call("GetActive")
+        if r.returncode == 0:
+            return "(true" in r.stdout
     except Exception as e:
         log.warning("GetActive failed: %s", e)
-        return False
+    return False
 
 
 def blank_screen():
-    """Blank screen via SetActive(true)."""
-    env = get_env()
-    log.info("blank screen (SetActive true)")
-    subprocess.run(
-        ["gdbus", "call", "--session",
-         "--dest", "org.gnome.ScreenSaver",
-         "--object-path", "/org/gnome/ScreenSaver",
-         "--method", "org.gnome.ScreenSaver.SetActive", "true"],
-        env=env, timeout=3)
+    """Blank the screen (fall back to locking the session)."""
+    log.info("blank screen")
+    try:
+        r = screensaver_call("SetActive", "true")
+        if r.returncode == 0:
+            return
+        log.warning("SetActive(true) failed: %s", r.stderr.strip())
+    except Exception as e:
+        log.warning("SetActive(true) error: %s", e)
+    loginctl("lock-session")
 
 
 def wake_screen():
-    """Wake screen via SetActive(false)."""
-    env = get_env()
-    log.info("wake screen (SetActive false)")
-    subprocess.run(
-        ["gdbus", "call", "--session",
-         "--dest", "org.gnome.ScreenSaver",
-         "--object-path", "/org/gnome/ScreenSaver",
-         "--method", "org.gnome.ScreenSaver.SetActive", "false"],
-        env=env, timeout=3)
+    """Wake the screen (fall back to unlocking the session)."""
+    log.info("wake screen")
+    try:
+        r = screensaver_call("SetActive", "false")
+        if r.returncode == 0:
+            return
+        log.warning("SetActive(false) failed: %s", r.stderr.strip())
+    except Exception as e:
+        log.warning("SetActive(false) error: %s", e)
+    loginctl("unlock-session")
 
 
 def toggle_screen():
@@ -148,9 +190,23 @@ def toggle_screen():
 
 
 def show_power_menu():
-    """Show GNOME shutdown dialog."""
+    """Show the desktop shutdown dialog."""
     env = get_env()
-    log.info("show power menu (long press)")
+    if DESKTOP == "kde":
+        log.info("show power menu (long press) via org.kde.Shutdown")
+        r = subprocess.run(
+            ["gdbus", "call", "--session",
+             "--dest", "org.kde.Shutdown",
+             "--object-path", "/Shutdown",
+             "--method", "org.kde.Shutdown.logoutAndShutdown"],
+            env=env, capture_output=True, text=True, timeout=3)
+        if r.returncode == 0:
+            return
+        log.warning("org.kde.Shutdown failed: %s", r.stderr.strip())
+        subprocess.Popen(["systemctl", "poweroff"])
+        return
+
+    log.info("show power menu (long press) via org.gnome.SessionManager")
     r = subprocess.run(
         ["busctl", "--user", "call",
          "org.gnome.SessionManager",
@@ -163,18 +219,19 @@ def show_power_menu():
 
 
 def wait_for_session(timeout=120):
-    """Wait for user's GNOME session to be ready."""
+    """Wait for the user's desktop session to be ready."""
     user = get_user()
+    session_proc = os.environ.get("POWER_KEY_SESSION_PROC") or SESSION_PROC
     import pwd
     uid = pwd.getpwnam(user).pw_uid
     bus_path = f"/run/user/{uid}/bus"
-    log.info("waiting for %s GNOME session", user)
+    log.info("waiting for %s %s session", user, DESKTOP)
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if os.path.exists(bus_path):
             try:
                 subprocess.run(
-                    ["pgrep", "-u", user, "-x", "gnome-shell"],
+                    ["pgrep", "-u", user, "-f", session_proc],
                     check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 time.sleep(3)
                 log.info("session ready")
@@ -260,6 +317,8 @@ Wants=graphical-session.target
 [Service]
 Type=simple
 Environment=USER_NAME=${POWER_KEY_USER}
+Environment=POWER_KEY_DESKTOP=${DESKTOP_ENV}
+Environment=POWER_KEY_SESSION_PROC=${SESSION_PROC}
 ExecStart=/usr/bin/python3 /usr/local/sbin/power-key-handler.py
 Restart=always
 RestartSec=5
@@ -273,19 +332,25 @@ echo "[$(date +'%Y-%m-%d %H:%M:%S')]   └─ 启用用户 lingering（确保用
 install -d rootdir/var/lib/systemd/linger
 touch rootdir/var/lib/systemd/linger/"${POWER_KEY_USER}"
 
-echo "[$(date +'%Y-%m-%d %H:%M:%S')]   └─ 禁用 GNOME 自带电源键处理"
-install -d rootdir/etc/dconf/db/local.d rootdir/etc/dconf/profile
-cat > rootdir/etc/dconf/db/local.d/01-power-key << 'EOF'
+if [ "$DESKTOP_ENV" = "gnome" ]; then
+	echo "[$(date +'%Y-%m-%d %H:%M:%S')]   └─ 禁用 GNOME 自带电源键处理"
+	install -d rootdir/etc/dconf/db/local.d rootdir/etc/dconf/profile
+	cat > rootdir/etc/dconf/db/local.d/01-power-key << 'EOF'
 [org/gnome/settings-daemon/plugins/power]
 power-button-action='nothing'
 EOF
-if [ ! -f rootdir/etc/dconf/profile/user ]; then
-	cat > rootdir/etc/dconf/profile/user << 'EOF'
+	if [ ! -f rootdir/etc/dconf/profile/user ]; then
+		cat > rootdir/etc/dconf/profile/user << 'EOF'
 user-db:user
 system-db:local
 EOF
+	fi
+	chroot rootdir dconf update 2>/dev/null || true
+elif [ "$DESKTOP_ENV" = "kde" ]; then
+	echo "[$(date +'%Y-%m-%d %H:%M:%S')]   └─ 说明: KDE Plasma 自带电源键处理由 PowerDevil 通过 logind 抑制锁实现"
+	echo "[$(date +'%Y-%m-%d %H:%M:%S')]      上面已设置 HandlePowerKey=ignore，长按关机菜单由本脚本提供"
+	echo "[$(date +'%Y-%m-%d %H:%M:%S')]      如需彻底关闭可执行: kwriteconfig6 --file powermanagementprofilesrc --group AC --group HandleButtonEvents --key powerButtonAction 0"
 fi
-chroot rootdir dconf update 2>/dev/null || true
 
 echo "[$(date +'%Y-%m-%d %H:%M:%S')]   └─ 添加 udev 规则确保电源键可读"
 cat > rootdir/etc/udev/rules.d/99-power-key.rules << 'EOF'

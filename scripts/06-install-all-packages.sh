@@ -37,6 +37,13 @@ if [[ "$SYSTEM_TYPE" != *"server"* ]]; then
                 DESKTOP_PACKAGES="gnome"
             fi
             ;;
+        "kde")
+            if [[ "$SYSTEM_TYPE" == *"ubuntu-"* ]]; then
+                DESKTOP_PACKAGES="kubuntu-desktop"
+            elif [[ "$SYSTEM_TYPE" == *"debian-"* ]]; then
+                DESKTOP_PACKAGES="kde-standard"
+            fi
+            ;;
         "phosh-core")
             DESKTOP_PACKAGES="phosh-core"
             ;;
@@ -79,6 +86,13 @@ if [[ "$SYSTEM_TYPE" != *"server"* ]]; then
     if [[ "$DESKTOP_ENV" == phosh* ]]; then
         echo "[$(date +'%Y-%m-%d %H:%M:%S')]   └─ 启用 Phosh 服务"
         chroot rootdir systemctl enable phosh
+    elif [ "$DESKTOP_ENV" = "kde" ]; then
+        if [ -f rootdir/usr/bin/startplasma-wayland ] || [ -f rootdir/usr/bin/startplasma-x11 ]; then
+            echo "[$(date +'%Y-%m-%d %H:%M:%S')]   └─ 启用 KDE Plasma 显示管理器 SDDM"
+            chroot rootdir systemctl enable sddm
+        else
+            echo "[$(date +'%Y-%m-%d %H:%M:%S')]   └─ 未安装 KDE Plasma，跳过 SDDM 启用"
+        fi
     fi
 fi
 

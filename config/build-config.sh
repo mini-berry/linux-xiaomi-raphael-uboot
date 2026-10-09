@@ -13,6 +13,12 @@ system_config() {
       echo "IS_DESKTOP=true"
       echo "DESKTOP_ENV=gnome"
       ;;
+    "debian-kde")
+      echo "DEBIAN_VERSION=${DEBIAN_VERSION:-trixie}"
+      echo "IMAGE_SIZE=6G"
+      echo "IS_DESKTOP=true"
+      echo "DESKTOP_ENV=kde"
+      ;;
     "debian-phosh")
       echo "DEBIAN_VERSION=${DEBIAN_VERSION:-trixie}"
       echo "IMAGE_SIZE=6G"
@@ -30,6 +36,12 @@ system_config() {
       echo "IMAGE_SIZE=6G"
       echo "IS_DESKTOP=true"
       echo "DESKTOP_ENV=gnome"
+      ;;
+    "ubuntu-kde")
+      echo "UBUNTU_VERSION=${UBUNTU_VERSION:-resolute}"
+      echo "IMAGE_SIZE=6G"
+      echo "IS_DESKTOP=true"
+      echo "DESKTOP_ENV=kde"
       ;;
     "ubuntu-phosh")
       echo "UBUNTU_VERSION=${UBUNTU_VERSION:-resolute}"
