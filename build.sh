@@ -42,6 +42,9 @@ export IMAGE_UUID="ee8d3593-59b1-480e-a3b6-4fefb17ee7d8"
 export HOSTNAME="xiaomi-raphael"
 export BOOT_IMG="xiaomi-k20pro-boot.img"
 export KERNEL_DEBS_DIR="xiaomi-raphael-debs_$KERNEL_VERSION"
+# 目标架构：Raphael (K20 Pro) 为 arm64。CI 在 arm64 runner 上构建，
+# 本机在 x86_64 上构建时必须显式指定，否则会抓到不存在的 amd64 ports 索引。
+export ARCH="${ARCH:-arm64}"
 
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
 export DEBIAN_FRONTEND="noninteractive"
